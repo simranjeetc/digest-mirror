@@ -1,0 +1,61 @@
+name: Publish digest mirror
+
+# Deploys the last few RSS digests to GitHub Pages at an unguessable path, so
+# they can be read from a locked-down work machine that reaches *.github.io but
+# not gist.github.com and cannot hold a GitHub session.
+#
+# The digest content is NEVER committed to this repository. It is fetched at
+# runtime and handed straight to the Pages artifact. That is load-bearing, not
+# stylistic: this repo is public, so switching to the `gh-pages` branch
+# publishing route would silently make every digest public at rest and
+# indexable through this repo's blob pages. Keep the artifact route.
+
+on:
+  schedule:
+    # daily-digest in simranjeetc/discussions starts at 01:30 UTC with a
+    # 50-minute timeout, so the note may not be committed until ~02:20.
+    - cron: "0 3 * * *"   # 08:30 IST — the normal run
+    - cron: "0 8 * * *"   # 13:30 IST — catch-up if the digest ran late or failed
+  workflow_dispatch:
+
+permissions:
+  contents: read    # this repo only; the cross-repo read uses DIGEST_SOURCE_TOKEN
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render digests into _site
+        env:
+          DIGEST_SOURCE_TOKEN: ${{ secrets.DIGEST_SOURCE_TOKEN }}
+          DIGEST_PATH_TOKEN: ${{ secrets.DIGEST_PATH_TOKEN }}
+        # render.mjs logs filenames and nothing else. Do not add debug output
+        # that echoes digest bodies — run logs on a public repo are readable by
+        # anyone. Secret values are masked automatically; content is not.
+        run: node render.mjs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+          # The artifact is the one exposure a public repo carries that a
+          # private one would not: any signed-in user who thinks to look can
+          # download it. One day is the action's default; keep it there.
+          retention-days: 1
+
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
