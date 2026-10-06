@@ -9,13 +9,20 @@ name: Publish digest mirror
 # stylistic: this repo is public, so switching to the `gh-pages` branch
 # publishing route would silently make every digest public at rest and
 # indexable through this repo's blob pages. Keep the artifact route.
+#
+# This workflow also publishes the job digest (`render-jobs.mjs`) to /j/<token>/.
+# The two MUST share one workflow: deploy-pages replaces the entire site from a
+# single artifact, so a second workflow deploying here would clobber whichever
+# ran first — `concurrency: group: pages` serialises the deploys but does not
+# merge them. Both renderers write into the same `_site` before one upload.
 
 on:
   schedule:
     # daily-digest in simranjeetc/discussions starts at 01:30 UTC with a
     # 50-minute timeout, so the note may not be committed until ~02:20.
     - cron: "0 3 * * *"   # 08:30 IST — the normal run
-    - cron: "0 8 * * *"   # 13:30 IST — catch-up if the digest ran late or failed
+    - cron: "0 5 * * *"   # 10:30 IST — picks up the 09:15 IST job scan
+    - cron: "0 8 * * *"   # 13:30 IST — catch-up if either ran late or failed
   workflow_dispatch:
 
 permissions:
@@ -46,6 +53,22 @@ jobs:
         # that echoes digest bodies — run logs on a public repo are readable by
         # anyone. Secret values are masked automatically; content is not.
         run: node render.mjs
+
+      - name: Render job digest into _site
+        env:
+          DIGEST_SOURCE_TOKEN: ${{ secrets.DIGEST_SOURCE_TOKEN }}
+          DIGEST_PATH_TOKEN: ${{ secrets.DIGEST_PATH_TOKEN }}
+        # Shares the RSS token, which is already scoped contents:read on
+        # simranjeetc/discussions and so covers Personal/private/job-search/.
+        # Same logging rule as above: counts only, never listings.
+        #
+        # continue-on-error is deliberate. The job scan runs on a laptop, so its
+        # digest can legitimately be missing or stop updating; that must not take
+        # the RSS deploy down with it. A real failure still shows in this run's
+        # log, and the page carries its own `generated` timestamp so staleness is
+        # visible where it matters.
+        continue-on-error: true
+        run: node render-jobs.mjs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
