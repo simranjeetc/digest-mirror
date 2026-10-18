@@ -122,8 +122,9 @@ const html = `<!doctype html>
     <p id="summary"></p>
   </header>
   <div class="controls">
-    <input id="q" type="search" placeholder="filter title, company, location, board…">
+    <input id="q" type="search" placeholder="filter title, company, location, board, source…">
     <select id="board"><option value="">all boards</option></select>
+    <select id="found" hidden><option value="">all sources</option></select>
     <select id="sort">
       <option value="score">sort: score</option>
       <option value="age">sort: posting age</option>
@@ -137,6 +138,7 @@ const html = `<!doctype html>
     <thead><tr>
       <th class="num">#</th><th class="num">Score</th><th class="num">Age</th>
       <th>Role</th><th>Company</th><th>Location</th><th>Comp</th><th>Board</th>
+      <th>Found via</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
@@ -168,18 +170,40 @@ const html = `<!doctype html>
       bsel.appendChild(o);
     });
 
+  // found_via is the board that produced the row (CareerHound, HiringCafe, LinkedIn…);
+  // the board select above is where the LINK goes, which is a different question — a
+  // CareerHound or HiringCafe hit on an Ashby posting is board: ashby just like the
+  // direct-Ashby sweep. found_section carries the exact sweep (role + remote) for the
+  // cell's tooltip. Digests written before those fields existed have neither, so the
+  // control stays hidden rather than offering an empty filter.
+  var founds = {};
+  all.forEach(function (r) { if (r.found_via) founds[r.found_via] = (founds[r.found_via] || 0) + 1; });
+  var fsel = document.getElementById("found");
+  if (Object.keys(founds).length) {
+    fsel.hidden = false;
+    Object.keys(founds).sort(function (a, b) { return founds[b] - founds[a]; })
+      .forEach(function (f) {
+        var o = document.createElement("option");
+        o.value = f; o.textContent = f + " (" + founds[f] + ")";
+        fsel.appendChild(o);
+      });
+  }
+
   var tbody = document.getElementById("rows");
   function render() {
     var q = document.getElementById("q").value.trim().toLowerCase();
     var board = bsel.value;
+    var found = fsel.value;
     var onlyV = document.getElementById("verify").checked;
     var sort = document.getElementById("sort").value;
 
     var rows = all.filter(function (r) {
       if (board && r.board !== board) return false;
+      if (found && r.found_via !== found) return false;
       if (onlyV && !r.verify) return false;
       if (!q) return true;
-      return (r.title + " " + r.company + " " + r.location + " " + r.board)
+      return (r.title + " " + r.company + " " + r.location + " " + r.board + " " +
+        (r.found_via || "") + " " + (r.found_section || ""))
         .toLowerCase().indexOf(q) >= 0;
     });
 
@@ -210,13 +234,14 @@ const html = `<!doctype html>
         + '<td class="muted">' + esc(r.location) + "</td>"
         + '<td class="num">' + esc(r.comp) + "</td>"
         + '<td class="muted">' + esc(r.board) + "</td>"
+        + '<td class="muted">' + esc(r.found_via || "\\u2014") + "</td>"
         + "</tr>");
     });
-    tbody.innerHTML = out.join("") || '<tr><td colspan="8" class="muted">Nothing matches.</td></tr>';
+    tbody.innerHTML = out.join("") || '<tr><td colspan="9" class="muted">Nothing matches.</td></tr>';
     document.getElementById("count").textContent = rows.length + " of " + all.length;
   }
 
-  ["q", "board", "sort", "verify"].forEach(function (id) {
+  ["q", "board", "found", "sort", "verify"].forEach(function (id) {
     var el = document.getElementById(id);
     el.addEventListener(id === "q" ? "input" : "change", render);
   });

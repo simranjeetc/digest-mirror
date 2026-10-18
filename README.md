@@ -57,10 +57,24 @@ Two deliberate choices:
   comp, board, URL. No notes, no statuses, nothing from the tracker. The score is
   the same public-listing heuristic the email uses.
 
-The page sorts and filters client-side (score, posting age, board, verify flag,
-free text), which is the thing that made it worth publishing rather than mailing
-— at a few hundred roles the HTML email exceeded Gmail's ~102 KB render limit
-and was clipped.
+`board` and `found_via` answer different questions and both are published:
+
+| field | question | example |
+|---|---|---|
+| `board` | where the **link goes** (the apply page's host) | `ashby`, `linkedin`, `zohorecruit.com` |
+| `found_via` | which **scan board found it** | `CareerHound`, `HiringCafe`, `LinkedIn` |
+| `found_section` | the exact sweep, for the free-text box | `CareerHound — backend (remote)` |
+
+They differ whenever an aggregator surfaces an employer's own ATS listing: a
+CareerHound hit on an Ashby posting is `board: ashby` exactly like the
+direct-Ashby sweep would be, so `found_via` is the only way to see which board
+actually produced the row.
+
+The page sorts and filters client-side (score, posting age, board, found_via,
+verify flag, free text), which is the thing that made it worth publishing rather
+than mailing — at a few hundred roles the HTML email exceeded Gmail's ~102 KB
+render limit and was clipped. `found_via` is optional: a digest written before
+the field existed hides the source control instead of offering an empty filter.
 
 ## What protects it
 
