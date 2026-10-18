@@ -76,6 +76,19 @@ than mailing — at a few hundred roles the HTML email exceeded Gmail's ~102 KB
 render limit and was clipped. `found_via` is optional: a digest written before
 the field existed hides the source control instead of offering an empty filter.
 
+## Tests
+
+`test-render-jobs.mjs` runs the real renderer with a stubbed `fetch` and a minimal DOM,
+then drives the page's own inline script: both filters, the AND between them, the
+free-text box, the column order, and the "older digest has no `found_via`" fallback.
+
+```sh
+node test-render-jobs.mjs                  # synthetic fixtures, no network
+node test-render-jobs.mjs digest.json      # also against a real digest
+```
+
+It carries no secrets and reads nothing from the network, so it is safe to run anywhere.
+
 ## What protects it
 
 The path segment is the only access control. It comes from a repository secret
