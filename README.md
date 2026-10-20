@@ -88,6 +88,17 @@ node test-render-jobs.mjs digest.json      # also against a real digest
 ```
 
 It carries no secrets and reads nothing from the network, so it is safe to run anywhere.
+CI runs it in `publish.yml` **before** either render step, so a failing job-digest test
+stops the run before anything is built. The gate covers `render-jobs.mjs` only:
+`render.mjs`, the RSS renderer, has no test at all, so an RSS-side regression is not
+caught by it.
+
+Escaping is not a byte-level no-op. The inline script necessarily changed, and the string
+the page assigns to `innerHTML` now carries entities — `Engineer&#39;s Lead &amp;
+&quot;Staff&quot;` where the unescaped renderer put those characters raw — so neither the
+served HTML nor the runtime cell strings are byte-identical to before. What is unchanged
+is the structure and the displayed text: same rows, same nine cells, same option lists,
+and the browser decodes the entities back, so the parsed DOM text is identical.
 
 ## What protects it
 

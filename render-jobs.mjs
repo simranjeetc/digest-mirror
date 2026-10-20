@@ -71,13 +71,27 @@ console.log(
 // cannot break out of the tag.
 const payload = JSON.stringify(digest).replace(/<\//g, "<\\/");
 
+// Node-side escaping for the few digest values that go straight into the template.
+// The client-side esc() below cannot help here — this runs before the page exists —
+// and the digest is untrusted text, so its date must not be able to close the h1 or
+// the title. Same five characters, ampersand first, as the client-side esc().
+const escHtml = (s) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const dateLabel = digest.date == null ? "" : escHtml(digest.date);
+
 const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
-<title>Jobs ${digest.date ?? ""}</title>
+<title>Jobs ${dateLabel}</title>
 <style>
   :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#fdfdfc; --muted:#6b6b6b;
           --rule:#e3e3e0; --link:#0b5cad; --warn:#b06000; --chip:rgba(127,127,127,.14); }
@@ -118,7 +132,7 @@ const html = `<!doctype html>
 <body>
 <main>
   <header>
-    <h1>Job digest${digest.date ? " &middot; " + digest.date : ""}</h1>
+    <h1>Job digest${dateLabel ? " &middot; " + dateLabel : ""}</h1>
     <p id="summary"></p>
   </header>
   <div class="controls">
@@ -149,7 +163,20 @@ const html = `<!doctype html>
 (function () {
   var d = JSON.parse(document.getElementById("digest").textContent);
   var all = d.roles || [], c = d.counts || {};
-  var esc = function (s) { return (s == null ? "" : String(s)); };
+  // Escaping is for the innerHTML cell string only. The summary below is assigned to
+  // textContent, which does not parse entities, so it takes raw text: escaping there
+  // would show "&amp;" to the reader rather than "&".
+  // Every cell below is built by string concatenation and assigned to innerHTML, and
+  // the digest is untrusted text from a private repo. Escape the ampersand first, or
+  // the other entities get double-escaped.
+  var esc = function (s) {
+    return (s == null ? "" : String(s))
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  };
 
   document.getElementById("summary").textContent =
     all.length + " roles" +
@@ -158,7 +185,7 @@ const html = `<!doctype html>
     (c.dropped_old ? " \\u00b7 " + c.dropped_old + " dropped as older than " +
       (d.settings && d.settings.max_age_days) + "d" : "") +
     (c.undated ? " \\u00b7 " + c.undated + " publish no date" : "") +
-    " \\u00b7 generated " + esc(d.generated);
+    " \\u00b7 generated " + (d.generated == null ? "" : d.generated);
 
   var boards = {};
   all.forEach(function (r) { if (r.board) boards[r.board] = (boards[r.board] || 0) + 1; });
@@ -222,13 +249,25 @@ const html = `<!doctype html>
     rows.forEach(function (r, i) {
       var chips = "";
       if (r.verify) chips += ' <span class="chip warn" title="names a hub city beside a remote flag \\u2014 verify the remote scope">verify</span>';
-      var link = r.url
-        ? '<a href="' + encodeURI(r.url) + '" target="_blank" rel="noopener">' + esc(r.title) + "</a>"
+      // encodeURI() does not touch the scheme, so a "javascript:" or "data:" url from
+      // the digest would be script injection in its own right. Only http(s) becomes a
+      // real anchor; anything else renders as plain, escaped text.
+      var href = r.url ? String(r.url).trim() : "";
+      var link = /^https?:/i.test(href)
+        ? '<a href="' + encodeURI(href) + '" target="_blank" rel="noopener">' + esc(r.title) + "</a>"
         : esc(r.title);
+      // score and age are numbers by contract, but the digest is untrusted and both
+      // cells are built into innerHTML: coerce, and fall back the way the other empty
+      // cells do (0 for score, an em dash for age) instead of printing the JSON value.
+      var score = Number(r.score);
+      if (!isFinite(score)) score = 0;
+      var ageNum = (r.age === null || r.age === undefined || r.age === "")
+        ? NaN : Number(r.age);
+      var age = isFinite(ageNum) ? ageNum + "d" : "\\u2014";
       out.push("<tr>"
         + '<td class="num muted">' + (i + 1) + "</td>"
-        + '<td class="num">' + (r.score || 0) + "</td>"
-        + '<td class="num muted">' + (r.age === null || r.age === undefined ? "\\u2014" : r.age + "d") + "</td>"
+        + '<td class="num">' + score + "</td>"
+        + '<td class="num muted">' + age + "</td>"
         + '<td class="role">' + link + chips + "</td>"
         + "<td>" + esc(r.company) + "</td>"
         + '<td class="muted">' + esc(r.location) + "</td>"

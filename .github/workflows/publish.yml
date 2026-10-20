@@ -45,6 +45,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test the job digest renderer
+        # Covers render-jobs.mjs only. render.mjs (the RSS renderer) has no test at
+        # all, so an RSS-side regression is NOT caught here — this step cannot stop
+        # that deploy half.
+        #
+        # Before BOTH render steps, deliberately. The two renderers write into one
+        # `_site` that a single deploy replaces wholesale, so a failure after an
+        # earlier render success cannot un-deploy it: the only safe gate is up
+        # front, where a failing job-digest test stops the run before anything is
+        # built.
+        #
+        # NOT continue-on-error, unlike the job-digest render below. That one
+        # tolerates a stale laptop-run digest; this one is a code check, and a
+        # broken job-digest renderer must take the deploy down.
+        run: node test-render-jobs.mjs
+
       - name: Render digests into _site
         env:
           DIGEST_SOURCE_TOKEN: ${{ secrets.DIGEST_SOURCE_TOKEN }}

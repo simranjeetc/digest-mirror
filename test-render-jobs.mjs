@@ -128,7 +128,145 @@ const rowCount = (e) => (e.innerHTML.match(/<td class="role">/g) || []).length;
   check("the new column is still in the header", /<th>Found via<\/th>/.test(html));
 }
 
-// ── 3. optional: a real digest, passed on the command line ─────────────────
+// ── 3. hostile digest text must not become markup ──────────────────────────
+// The digest is untrusted: titles/companies come from scraped boards. Every cell is
+// assigned through innerHTML, so esc() has to escape and a url scheme has to be
+// checked — encodeURI() leaves `javascript:` alone.
+{
+  const payload = "<img src=x onerror=\"alert(1)\"> & 'q'";
+  const escaped = "&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;q&#39;";
+  const roles = [
+    role(0, {
+      title: payload, company: payload, location: payload, comp: payload,
+      board: payload, found_via: payload, found_section: payload,
+    }),
+    role(1, { url: "javascript:alert(document.domain)" }),
+    role(2, { url: "data:text/html,<script>alert(1)</script>" }),
+  ];
+  const { els } = await render({ date: "2026-10-18", counts: {}, roles });
+  const cells = els.rows.innerHTML;
+  const occurrences = cells.split(escaped).length - 1;
+
+  check("hostile text cannot open an element", !/<img/i.test(cells), "raw <img> in a cell");
+  check("hostile text cannot carry an attribute value", !/onerror="alert/i.test(cells),
+    "raw onerror=\" in a cell");
+  check("every hostile field is escaped, not dropped", occurrences === 6,
+    `${occurrences} escaped occurrences of the payload, wanted 6 (title/company/location/comp/board/found_via)`);
+  check("quotes and ampersands are escaped", cells.includes("&amp; &#39;q&#39;"),
+    "ampersand or quote left raw");
+  check("no half-escaped entity is left behind", !/&(?!(amp|lt|gt|quot|#39);)/.test(cells),
+    "a bare & survived escaping");
+  check("a javascript: url emits no live anchor", !/href\s*=\s*["']?\s*javascript:/i.test(cells),
+    "href=javascript: present");
+  check("a data: url emits no live anchor", !/href\s*=\s*["']?\s*data:/i.test(cells),
+    "href=data: present");
+  check("only the http(s) url becomes a link", (cells.match(/<a /g) || []).length === 1,
+    `${(cells.match(/<a /g) || []).length} anchors`);
+  check("the http(s) url keeps its anchor",
+    cells.includes('href="https://example.test/0"'), "anchor lost");
+  const rowFor = (text) =>
+    (cells.match(/<tr>[\s\S]*?<\/tr>/g) || []).find((row) => row.includes(text)) || "";
+  // Role 1's url is javascript: and Role 2's is data: — each row must render its title
+  // with no anchor at all, not merely "the title appears somewhere in the table".
+  const rejected = rowFor("Role 1");
+  const rejectedData = rowFor("Role 2");
+  check("a rejected url renders its title in a row with no anchor",
+    rejected.includes("Role 1") && !/<a\s/.test(rejected) && !/href=/.test(rejected),
+    "rejected row: " + rejected);
+  check("a rejected data: url renders its title in a row with no anchor",
+    rejectedData.includes("Role 2") && !/<a\s/.test(rejectedData) && !/href=/.test(rejectedData),
+    "rejected row: " + rejectedData);
+}
+
+// ── 4. score and age are numbers, not markup ───────────────────────────────
+// Both are coerced before they reach innerHTML. Numeric fields are still JSON from an
+// untrusted digest, so a string there must never be concatenated into a cell.
+{
+  const hostile = "<img src=x onerror=alert(1)>";
+  const roles = [
+    role(0, { score: 20, age: 3 }),
+    role(1, { score: hostile, age: hostile }),
+    role(2, { score: null, age: null }),
+  ];
+  const { els } = await render({ date: "2026-10-18", counts: {}, roles });
+  const cells = els.rows.innerHTML;
+
+  check("a hostile score or age cannot open an element", !/<img/i.test(cells),
+    "raw <img> in a numeric cell");
+  check("a hostile score or age is dropped, not rendered", !/onerror/i.test(cells),
+    "the payload survived into a numeric cell");
+  check("a non-numeric score falls back to 0",
+    (cells.match(/<td class="num">0<\/td>/g) || []).length === 2,
+    `${(cells.match(/<td class="num">0<\/td>/g) || []).length} zero score cells, wanted 2 (hostile + null)`);
+  check("a non-numeric age falls back to an em dash",
+    (cells.match(/<td class="num muted">\u2014<\/td>/g) || []).length === 2,
+    `${(cells.match(/<td class="num muted">\u2014<\/td>/g) || []).length} em-dash age cells, wanted 2 (hostile + null)`);
+  check("a well-formed score still renders", cells.includes('<td class="num">20</td>'),
+    "score 20 missing");
+  check("a well-formed age still renders", cells.includes('<td class="num muted">3d</td>'),
+    "3d missing");
+}
+
+// ── 5. the digest date is escaped where the Node-side template uses it ─────
+// <title> and <h1> are built by the renderer itself, before any client-side esc()
+// exists, so a hostile date must be escaped on the Node side.
+{
+  const hostile = "2026-10-18<img src=x onerror=alert(1)>";
+  const { html } = await render({ date: hostile, counts: {}, roles: [role(0)] });
+  const title = html.match(/<title>([\s\S]*?)<\/title>/)[1];
+  const h1 = html.match(/<h1>([\s\S]*?)<\/h1>/)[1];
+
+  check("a hostile date cannot open an element in <title>", !/<img/i.test(title),
+    "raw <img> in <title>: " + title);
+  check("a hostile date cannot open an element in <h1>", !/<img/i.test(h1),
+    "raw <img> in <h1>: " + h1);
+  check("a hostile date cannot break out of <title>", !/[<>]/.test(title),
+    "an unescaped angle bracket in <title>: " + title);
+  check("a hostile date cannot break out of <h1>", !/[<>]/.test(h1),
+    "an unescaped angle bracket in <h1>: " + h1);
+  check("a hostile date is escaped, not dropped",
+    title === "Jobs 2026-10-18&lt;img src=x onerror=alert(1)&gt;", "title was: " + title);
+  check("the h1 keeps its date, escaped",
+    h1 === "Job digest &middot; 2026-10-18&lt;img src=x onerror=alert(1)&gt;", "h1 was: " + h1);
+
+  const { html: plain } = await render({ date: "2026-10-18", counts: {}, roles: [role(0)] });
+  check("a well-formed date renders unchanged in <title>",
+    plain.includes("<title>Jobs 2026-10-18</title>"), "title changed");
+  check("a well-formed date renders unchanged in <h1>",
+    plain.includes('<h1>Job digest &middot; 2026-10-18</h1>'), "h1 changed");
+  const { html: none } = await render({ date: undefined, counts: {}, roles: [role(0)] });
+  check("a missing date still renders bare headings",
+    none.includes("<title>Jobs </title>") && none.includes("<h1>Job digest</h1>"),
+    "missing-date markup changed");
+}
+
+// ── 6. the summary line is a text sink, not markup ─────────────────────────
+// `summary` is assigned through textContent, which does not parse entities, so the
+// generated string must go in raw: escaping it would display "&amp;" to the reader.
+// Raw is safe here precisely because nothing parses the value as HTML.
+{
+  const generated = "Tom & Jerry's <b>run</b> \"done\"";
+  const { els } = await render({
+    date: "2026-10-18", counts: { verify: 1 }, generated, roles: [role(0)],
+  });
+  const summary = els.summary.textContent;
+
+  check("the summary shows the generated text raw",
+    summary === "1 roles \u00b7 1 to verify \u00b7 generated " + generated,
+    "summary was: " + summary);
+  check("the summary carries no HTML entities", !/&(amp|lt|gt|quot|#39);/.test(summary),
+    "entities in a textContent sink: " + summary);
+  check("the summary is a text node, never parsed markup",
+    els.summary.innerHTML === "" && summary.includes("<b>run</b>"),
+    "summary innerHTML: " + JSON.stringify(els.summary.innerHTML));
+
+  const { els: noGen } = await render({ date: "2026-10-18", counts: {}, roles: [role(0)] });
+  check("a missing generated still renders as before",
+    noGen.summary.textContent === "1 roles \u00b7 generated ",
+    "summary was: " + noGen.summary.textContent);
+}
+
+// ── 7. optional: a real digest, passed on the command line ─────────────────
 const real = process.argv[2];
 if (real) {
   const digest = JSON.parse(readFileSync(real, "utf8"));
