@@ -83,7 +83,7 @@ const rowCount = (e) => (e.innerHTML.match(/<td class="role">/g) || []).length;
     els.found.children.every((o) => /\(\d+\)$/.test(o.textContent)), "no counts");
   check("the column follows Board",
     /<th>Board<\/th>\s*<th>Found via<\/th>/.test(html), "header order changed");
-  check("the empty-result colspan matches the column count", html.includes('colspan="9"'));
+  check("the empty-result colspan matches the column count", html.includes('colspan="10"'));
   check("every role renders by default", rowCount(els.rows) === roles.length,
     `${rowCount(els.rows)} of ${roles.length}`);
   check("no cell renders 'undefined'", !/undefined/.test(els.rows.innerHTML));
@@ -252,7 +252,7 @@ const rowCount = (e) => (e.innerHTML.match(/<td class="role">/g) || []).length;
   const summary = els.summary.textContent;
 
   check("the summary shows the generated text raw",
-    summary === "1 roles \u00b7 1 to verify \u00b7 generated " + generated,
+    summary === "1 roles \u00b7 1 with an unconfirmed location \u00b7 generated " + generated,
     "summary was: " + summary);
   check("the summary carries no HTML entities", !/&(amp|lt|gt|quot|#39);/.test(summary),
     "entities in a textContent sink: " + summary);
@@ -264,6 +264,46 @@ const rowCount = (e) => (e.innerHTML.match(/<td class="role">/g) || []).length;
   check("a missing generated still renders as before",
     noGen.summary.textContent === "1 roles \u00b7 generated ",
     "summary was: " + noGen.summary.textContent);
+}
+
+// ── 6b. the model's verdict on the row (F32) ───────────────────────────────
+{
+  const roles = [
+    role(0, { verdict: "fit", vscore: 80, vscreen: "JD", vmodel: "opencode-go/x" }),
+    role(1, { verdict: "verify", vscore: 55, vscreen: "title", vmodel: "opencode-go/y" }),
+    role(2, { verdict: "drop", vscore: 20, vscreen: "title", vmodel: "opencode-go/z" }),
+    role(3),                                   // nobody judged it
+  ];
+  const { html, els } = await render({
+    date: "2026-10-18", counts: { fit: 1, verify: 2 }, generated: "now", roles,
+  });
+
+  check("the header carries a Verdict column",
+    /<th class="num">Verdict<\/th>/.test(html), "no Verdict header");
+  check("the Verdict column follows the number",
+    /<th class="num">#<\/th><th class="num">Verdict<\/th>/.test(html),
+    "header order changed");
+  const cells = (els.rows.innerHTML.match(/<td class="num"[^>]*>(fit|verify|drop|\u2014)[^<]*<\/td>/g) || []);
+  check("every row has a verdict cell", cells.length === roles.length,
+    `${cells.length} of ${roles.length}`);
+  check("a fit reads 'fit' with its score and screen",
+    els.rows.innerHTML.includes("fit 80 (JD)"), "no 'fit 80 (JD)' cell");
+  check("a verify reads 'verify' with its score and screen",
+    els.rows.innerHTML.includes("verify 55 (title)"), "no 'verify 55 (title)' cell");
+  check("an unjudged row reads an em dash",
+    els.rows.innerHTML.includes("\u2014</td>"), "no em dash cell");
+  check("the model that wrote the verdict is in the cell's title",
+    els.rows.innerHTML.includes('title="model: opencode-go/x"'), "no model tooltip");
+  check("the verdict cell escapes its text",
+    !/undefined/.test(els.rows.innerHTML), "undefined in a cell");
+  check("the summary names the model's fits",
+    els.summary.textContent.includes("1 the model says fit"),
+    els.summary.textContent);
+  check("the summary no longer calls the location flag 'to verify'",
+    !els.summary.textContent.includes("to verify"), els.summary.textContent);
+  check("the summary says 'with an unconfirmed location'",
+    els.summary.textContent.includes("2 with an unconfirmed location"),
+    els.summary.textContent);
 }
 
 // ── 7. optional: a real digest, passed on the command line ─────────────────

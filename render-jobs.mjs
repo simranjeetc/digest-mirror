@@ -145,12 +145,13 @@ const html = `<!doctype html>
       <option value="seen">sort: newest found</option>
       <option value="company">sort: company</option>
     </select>
-    <label class="tog"><input type="checkbox" id="verify"> only verify</label>
+    <label class="tog"><input type="checkbox" id="verify"> only location checks</label>
     <span id="count"></span>
   </div>
   <table>
     <thead><tr>
-      <th class="num">#</th><th class="num">Score</th><th class="num">Age</th>
+      <th class="num">#</th><th class="num">Verdict</th><th class="num">Score</th>
+      <th class="num">Age</th>
       <th>Role</th><th>Company</th><th>Location</th><th>Comp</th><th>Board</th>
       <th>Found via</th>
     </tr></thead>
@@ -180,7 +181,8 @@ const html = `<!doctype html>
 
   document.getElementById("summary").textContent =
     all.length + " roles" +
-    (c.verify ? " \\u00b7 " + c.verify + " to verify" : "") +
+    (c.fit ? " \\u00b7 " + c.fit + " the model says fit" : "") +
+    (c.verify ? " \\u00b7 " + c.verify + " with an unconfirmed location" : "") +
     (c.direct ? " \\u00b7 " + c.direct + " direct-apply" : "") +
     (c.dropped_old ? " \\u00b7 " + c.dropped_old + " dropped as older than " +
       (d.settings && d.settings.max_age_days) + "d" : "") +
@@ -248,7 +250,7 @@ const html = `<!doctype html>
     var out = [];
     rows.forEach(function (r, i) {
       var chips = "";
-      if (r.verify) chips += ' <span class="chip warn" title="names a hub city beside a remote flag \\u2014 verify the remote scope">verify</span>';
+      if (r.verify) chips += ' <span class="chip warn" title="names a hub city beside a remote flag \\u2014 the remote scope is unconfirmed">location?</span>';
       // encodeURI() does not touch the scheme, so a "javascript:" or "data:" url from
       // the digest would be script injection in its own right. Only http(s) becomes a
       // real anchor; anything else renders as plain, escaped text.
@@ -264,8 +266,21 @@ const html = `<!doctype html>
       var ageNum = (r.age === null || r.age === undefined || r.age === "")
         ? NaN : Number(r.age);
       var age = isFinite(ageNum) ? ageNum + "d" : "\\u2014";
+      // the model's call on this posting: fit / verify / drop, its score, and which
+      // screen spoke (JD = the job description was read, title = only the card). The
+      // feed has carried these since F23; the page did not show them.
+      var verdict = (r.verdict || "").trim();
+      var vcell = "\\u2014";
+      if (verdict) {
+        var vs = Number(r.vscore);
+        if (!isFinite(vs)) vs = "";
+        vcell = verdict + (vs === "" ? "" : " " + vs);
+        if (r.vscreen) vcell += " (" + r.vscreen + ")";
+      }
+      var vtitle = r.vmodel ? "model: " + r.vmodel : "";
       out.push("<tr>"
         + '<td class="num muted">' + (i + 1) + "</td>"
+        + '<td class="num"' + (vtitle ? ' title="' + esc(vtitle) + '"' : "") + ">" + esc(vcell) + "</td>"
         + '<td class="num">' + score + "</td>"
         + '<td class="num muted">' + age + "</td>"
         + '<td class="role">' + link + chips + "</td>"
@@ -276,7 +291,7 @@ const html = `<!doctype html>
         + '<td class="muted">' + esc(r.found_via || "\\u2014") + "</td>"
         + "</tr>");
     });
-    tbody.innerHTML = out.join("") || '<tr><td colspan="9" class="muted">Nothing matches.</td></tr>';
+    tbody.innerHTML = out.join("") || '<tr><td colspan="10" class="muted">Nothing matches.</td></tr>';
     document.getElementById("count").textContent = rows.length + " of " + all.length;
   }
 
