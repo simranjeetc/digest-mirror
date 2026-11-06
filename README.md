@@ -39,13 +39,14 @@ upload.
 
 ## The job digest
 
-`render-jobs.mjs` renders `Personal/private/job-search/digest.json` — a
+`render-jobs.mjs` renders `digest.json` from the `data` branch of the private
+`simranjeetc/jobscan` repo — a
 machine-readable feed the laptop-side scan writes — into `/j/<token>/`. Keeping
 the source JSON rather than markdown means this repo needs no markdown parser
 and no regex over a table that can gain columns.
 
-It reuses `DIGEST_SOURCE_TOKEN` (already `contents:read` on `discussions`, so it
-covers that path) and `DIGEST_PATH_TOKEN`.
+It reuses `DIGEST_SOURCE_TOKEN` (`contents:read` on `discussions` **and** `jobscan`)
+and `DIGEST_PATH_TOKEN`.
 
 Two deliberate choices:
 
@@ -123,7 +124,7 @@ pipeline.
 
 | Secret | What it is |
 |---|---|
-| `DIGEST_SOURCE_TOKEN` | Fine-grained PAT, resource owner `simranjeetc`, **only** the `discussions` repository, **Contents: Read-only**. Nothing else. |
+| `DIGEST_SOURCE_TOKEN` | Fine-grained PAT, resource owner `simranjeetc`, **only** the `discussions` and `jobscan` repositories, **Contents: Read-only**. Nothing else. |
 | `DIGEST_PATH_TOKEN` | Long hex string from `openssl rand -hex 8`. Generate it locally and paste it straight into the secret field. |
 
 `DIGEST_SOURCE_TOKEN` expires. When it does, the workflow fails with a

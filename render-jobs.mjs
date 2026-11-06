@@ -4,9 +4,9 @@
 // site on each deployment, so the RSS digests and the job digest MUST be rendered
 // into one `_site` by one workflow. Two workflows would clobber each other.
 //
-// Reads `Personal/private/job-search/digest.json` out of the PRIVATE
-// simranjeetc/discussions repo with a read-only PAT — the same token render.mjs
-// uses, which is already scoped contents:read on that repo and covers this path.
+// Reads `digest.json` from the `data` branch of the PRIVATE simranjeetc/jobscan
+// repo with a read-only PAT — the same token render.mjs uses, which must be scoped
+// contents:read on both `discussions` (RSS digests) and `jobscan` (this feed).
 // Nothing read here is ever committed: `_site` goes straight to the Pages artifact.
 //
 // Same two rules as render.mjs:
@@ -17,8 +17,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC_OWNER = "simranjeetc";
-const SRC_REPO = "discussions";
-const SRC_PATH = "Personal/private/job-search/digest.json";
+const SRC_REPO = "jobscan";
+const SRC_REF = "data";
+const SRC_PATH = "digest.json";
 
 const token = process.env.DIGEST_SOURCE_TOKEN;
 const pathToken = process.env.DIGEST_PATH_TOKEN;
@@ -32,7 +33,7 @@ if (!/^[0-9a-f]{12,}$/.test(pathToken ?? "")) {
   );
 }
 
-const url = `https://api.github.com/repos/${SRC_OWNER}/${SRC_REPO}/contents/${SRC_PATH}`;
+const url = `https://api.github.com/repos/${SRC_OWNER}/${SRC_REPO}/contents/${SRC_PATH}?ref=${SRC_REF}`;
 const res = await fetch(url, {
   headers: {
     authorization: `Bearer ${token}`,
